@@ -1,6 +1,7 @@
-use eframe::egui::RichText;
 use eframe::egui::Context;
+use eframe::egui::RichText;
 use eframe::{egui, Frame};
+use std::{sync::mpsc, thread};
 
 fn main() -> eframe::Result<()> {
     let native_options = eframe::NativeOptions::default();
@@ -11,7 +12,7 @@ fn main() -> eframe::Result<()> {
     )
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 enum ScratchPadMethod {
     GET,
     POST,
@@ -22,6 +23,7 @@ enum ScratchPadMethod {
     HEAD,
 }
 
+#[derive(Clone)]
 struct ScratchPad {
     title: String,
 
@@ -59,6 +61,8 @@ struct App {
     current_scratchpad: Option<usize>,
     confirm_delete: bool,
     close_button: String,
+    tx: mpsc::Sender<reqwest::blocking::Response>,
+    rx: mpsc::Receiver<reqwest::blocking::Response>,
 }
 
 impl App {
@@ -69,11 +73,15 @@ impl App {
         // for e.g. egui::PaintCallback.
         cc.egui_ctx.set_fonts(egui::FontDefinitions::default());
 
+        let (tx, rx) = mpsc::channel::<reqwest::blocking::Response>();
+
         Self {
             scratchpads: Vec::new(),
             current_scratchpad: None,
             confirm_delete: false,
             close_button: String::from('❌'),
+            tx,
+            rx,
         }
     }
 }
@@ -109,6 +117,8 @@ impl eframe::App for App {
                         } else {
                             if ui.label(RichText::new(&scratchpad.title)).clicked() {
                                 self.current_scratchpad = Some(index);
+                                self.confirm_delete = false;
+                                self.close_button = String::from("❌");
                             }
                         }
                     });
@@ -172,6 +182,25 @@ impl eframe::App for App {
 
                                     ui.label("URL:");
                                     ui.text_edit_singleline(&mut current_scratchpad.url);
+
+                                    //let to_send = reqwest::blocking::Response {};
+
+                                    if ui.button("Execute").clicked() {
+                                        let scratchpad = current_scratchpad.clone();
+                                        let sender = self.tx.clone();
+                                        thread::spawn(move || {
+                                            let resp = reqwest::blocking::get(scratchpad.url.as_str());
+                                            if let Ok(response) = resp {
+                                                
+                                            }
+                                        });
+
+                                        let resp =
+                                            reqwest::blocking::get(current_scratchpad.url.as_str());
+                                        if let Ok(response) = resp {
+                                            current_scratchpad.body = response.text().unwrap();
+                                        }
+                                    }
                                 });
                             });
 
@@ -180,6 +209,7 @@ impl eframe::App for App {
                             .show(&mut columns[1], |ui| {
                                 ui.horizontal(|ui| {
                                     ui.label(current_scratchpad.url.clone());
+                                    ui.label(current_scratchpad.body.clone());
                                 });
                             });
                     });
